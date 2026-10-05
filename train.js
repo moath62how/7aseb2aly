@@ -36,9 +36,7 @@ function loadCSV(file) {
   const header = lines[0].split(",");
   const labelIndex = header.indexOf("Category");
   if (labelIndex < 0) throw new Error("no Category column found");
-  const featCount = labelIndex / 2;
-  if (!Number.isInteger(featCount))
-    throw new Error(`expected interleaved x,y columns, got ${labelIndex}`);
+  const featCount = labelIndex;
   const X = [];
   const Y = [];
   const classes = [];
@@ -48,7 +46,7 @@ function loadCSV(file) {
     const parts = line.split(",");
     if (parts.length !== header.length) continue;
     const feat = new Float32Array(featCount);
-    for (let f = 0; f < featCount; f++) feat[f] = parseFloat(parts[f * 2]);
+    for (let f = 0; f < featCount; f++) feat[f] = parseFloat(parts[f]);
     if (feat.some((v) => !isFinite(v))) continue;
     const label = parts[labelIndex].trim();
     let y = classes.indexOf(label);
@@ -62,10 +60,10 @@ function loadCSV(file) {
   return { X, Y, classes, featCount };
 }
 
-const { X, Y, classes, featCount } = loadCSV(
-  path.join(__dirname, "data.csv"),
+const { X, Y, classes, featCount } = loadCSV(path.join(__dirname, "data.csv"));
+console.log(
+  `loaded ${X.length} samples, ${featCount} features, classes: ${classes.join(", ")}`,
 );
-console.log(`loaded ${X.length} samples, ${featCount} features, classes: ${classes.join(", ")}`);
 
 // ---- standardization ----
 const mean = new Float64Array(featCount);
@@ -173,17 +171,21 @@ function backward(x, target) {
       for (let i = 0; i < nIn; i++) s += a[i] * W[i * out + o];
       z[o] = s;
     }
-    const next = li === 2 ? softmax(z) : (() => {
-      const t = new Float32Array(out);
-      for (let o = 0; o < out; o++) t[o] = relu(z[o]);
-      return t;
-    })();
+    const next =
+      li === 2
+        ? softmax(z)
+        : (() => {
+            const t = new Float32Array(out);
+            for (let o = 0; o < out; o++) t[o] = relu(z[o]);
+            return t;
+          })();
     acts.push({ z, next, nIn, out });
     a = next;
   }
   // output delta (acts[3].next holds the softmax probabilities)
   const d3 = new Float32Array(nOut);
-  for (let o = 0; o < nOut; o++) d3[o] = acts[3].next[o] - (o === target ? 1 : 0);
+  for (let o = 0; o < nOut; o++)
+    d3[o] = acts[3].next[o] - (o === target ? 1 : 0);
 
   const grads = [];
   // layer 3 (output layer)
@@ -229,26 +231,33 @@ function adamUpdate() {
     for (let i = 0; i < W.length; i++) {
       mW[li][i] = B1 * mW[li][i] + (1 - B1) * g.gW[i];
       vW[li][i] = B2 * vW[li][i] + (1 - B2) * g.gW[i] * g.gW[i];
-      W[i] -= (LR * (mW[li][i] / (1 - Math.pow(B1, step)))) / (Math.sqrt(vW[li][i] / (1 - Math.pow(B2, step))) + EPS);
+      W[i] -=
+        (LR * (mW[li][i] / (1 - Math.pow(B1, step)))) /
+        (Math.sqrt(vW[li][i] / (1 - Math.pow(B2, step))) + EPS);
     }
     for (let i = 0; i < b.length; i++) {
       mb[li][i] = B1 * mb[li][i] + (1 - B1) * g.gb[i];
       vb[li][i] = B2 * vb[li][i] + (1 - B2) * g.gb[i] * g.gb[i];
-      b[i] -= (LR * (mb[li][i] / (1 - Math.pow(B1, step)))) / (Math.sqrt(vb[li][i] / (1 - Math.pow(B2, step))) + EPS);
+      b[i] -=
+        (LR * (mb[li][i] / (1 - Math.pow(B1, step)))) /
+        (Math.sqrt(vb[li][i] / (1 - Math.pow(B2, step))) + EPS);
     }
   }
 }
 
 let G = null;
 function accumulate(indices) {
-  G = [ { gW: zeros(L1.W.length), gb: zeros(L1.b.length) },
-        { gW: zeros(L2.W.length), gb: zeros(L2.b.length) },
-        { gW: zeros(L3.W.length), gb: zeros(L3.b.length) } ];
+  G = [
+    { gW: zeros(L1.W.length), gb: zeros(L1.b.length) },
+    { gW: zeros(L2.W.length), gb: zeros(L2.b.length) },
+    { gW: zeros(L3.W.length), gb: zeros(L3.b.length) },
+  ];
   for (const i of indices) {
     const { grads } = backward(Xn[i], Y[i]);
     // grads come back output-layer-first; store them in layer order
     for (let li = 0; li < 3; li++) {
-      const g = grads[2 - li], acc = G[li];
+      const g = grads[2 - li],
+        acc = G[li];
       for (let k = 0; k < acc.gW.length; k++) acc.gW[k] += g.gW[k];
       for (let k = 0; k < acc.gb.length; k++) acc.gb[k] += g.gb[k];
     }
@@ -268,7 +277,8 @@ function predict(x) {
 }
 
 function evaluate(indices) {
-  let correct = 0, loss = 0;
+  let correct = 0,
+    loss = 0;
   const conf = new Array(nOut).fill(0).map(() => new Array(nOut).fill(0));
   for (const i of indices) {
     const { probs } = backward(Xn[i], Y[i]);
